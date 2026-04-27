@@ -1,0 +1,141 @@
+// Delphine Swimwear — Prisma schema
+// Postgres-backed. Works on Vercel Postgres, Neon, Supabase, Railway, etc.
+
+generator client {
+  provider      = "prisma-client-js"
+  // Include the RHEL OpenSSL 3 engine for Vercel's serverless runtime.
+  // "native" keeps local development working too.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── Catalog ─────────────────────────────
+
+model Product {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  subtitle    String
+  category    String   // "one-pieces" | "bikinis"
+  description String   @db.Text
+  priceCents  Int      // store money in the smallest unit (cents)
+  currency    String   @default("EUR")
+  badge       String?  // "Best Seller" | "New" | null
+  mainImage   String
+  altImage    String
+  swatchHex   String   @default("#1B1916")
+  sizes       String[] @default(["XS", "S", "M", "L", "XL"])
+  active      Boolean  @default(true)
+  featured    Boolean  @default(false)
+  sortOrder   Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orderItems OrderItem[]
+
+  @@index([category, active])
+  @@index([featured, active])
+}
+
+// ───────────────────────────── Orders ──────────────────────────────
+
+enum OrderStatus {
+  pending
+  processing
+  shipped
+  delivered
+  cancelled
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  failed
+  refunded
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  orderNumber     String        @unique // human-friendly: DEL-2026-0001
+  email           String
+  customerName    String
+  phone           String?
+
+  // shipping
+  address1        String
+  address2        String?
+  city            String
+  postalCode      String
+  country         String
+
+  // money (all in cents)
+  subtotalCents   Int
+  shippingCents   Int
+  taxCents        Int           @default(0)
+  totalCents      Int
+  currency        String        @default("EUR")
+
+  status          OrderStatus   @default(pending)
+  paymentStatus   PaymentStatus @default(pending)
+  paymentMethod   String        @default("pok") // future: "pok"
+  paymentRef      String?       // POK transaction reference
+
+  trackingNumber  String?
+  notes           String?       @db.Text
+
+  items           OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id          String  @id @default(cuid())
+  orderId     String
+  productId   String?
+  productSlug String
+  productName String
+  size        String
+  color       String
+  priceCents  Int
+  quantity    Int
+  image       String
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+}
+
+// ─────────────────────── Contact / Newsletter ──────────────────────
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  subject   String?
+  message   String   @db.Text
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model NewsletterSubscriber {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  status       String    @default("active") // "active" | "unsubscribed"
+  subscribedAt DateTime  @default(now())
+  unsubscribedAt DateTime?
+
+  @@index([status])
+}
